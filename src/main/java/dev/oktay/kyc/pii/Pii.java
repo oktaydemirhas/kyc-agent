@@ -1,6 +1,7 @@
 package dev.oktay.kyc.pii;
 
 import dev.oktay.kyc.check.Checks;
+import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -33,19 +34,21 @@ public final class Pii {
 
     // Digit runs use lookarounds instead of \b so values glued to letters are still found.
     private static final List<Rule> RULES = List.of(
-        new Rule("IBAN", Pattern.compile("(?<![A-Za-z0-9])TR\\d{2}(?:[\\s-]?\\d{4}){5}[\\s-]?\\d{2}(?!\\d)", Pattern.CASE_INSENSITIVE), s -> true),
+        new Rule("IBAN", Pattern.compile("(?<![A-Za-z0-9])TR[\\s.-]?\\d{2}(?:[\\s.-]?\\d{4}){5}[\\s.-]?\\d{2}(?!\\d)", Pattern.CASE_INSENSITIVE), s -> true),
         // No Luhn check on purpose: over-masking an invoice number is harmless, leaking a mistyped card is not.
         new Rule("KART", Pattern.compile("(?<!\\d)(?:(?:\\d{4}[\\s-]?){3}\\d{4}|\\d{4}[\\s-]?\\d{6}[\\s-]?\\d{5})(?!\\d)"), s -> true),
         // Masked even when the checksum fails: the vault must hold every candidate so the decision engine can
         // report TCKN_INVALID. Leaving a bad number in the text made the model echo it back as "ungrounded".
-        new Rule("TCKN", Pattern.compile("(?<!\\d)[1-9]\\d{2}[\\s-]?\\d{3}[\\s-]?\\d{3}[\\s-]?\\d{2}(?!\\d)"), s -> true),
+        // Groupings 3-3-3-2 and 4-4-3, separated by space, dot or hyphen. Dates (2-2-4) never fit these shapes.
+        new Rule("TCKN", Pattern.compile("(?<!\\d)(?:[1-9]\\d{2}[\\s.-]?\\d{3}[\\s.-]?\\d{3}[\\s.-]?\\d{2}|[1-9]\\d{3}[\\s.-]?\\d{4}[\\s.-]?\\d{3})(?!\\d)"), s -> true),
         new Rule("TELEFON", Pattern.compile("(?<!\\d)(?:\\+?90[\\s-]?|0)?\\(?5\\d{2}\\)?[\\s-]?\\d{3}[\\s-]?\\d{2}[\\s-]?\\d{2}(?!\\d)"), s -> true),
         new Rule("EPOSTA", Pattern.compile("\\b[\\w.+-]+@[\\w-]+(?:\\.[\\w-]+)+\\b"), s -> true));
 
     public static Masked mask(String input) {
         List<Entity> entities = new ArrayList<>();
         Map<String, Integer> counters = new HashMap<>();
-        String text = input == null ? "" : input;
+        // NFKC folds full-width digits and non-breaking spaces to their plain forms so the patterns below see them.
+        String text = input == null ? "" : Normalizer.normalize(input, Normalizer.Form.NFKC);
         for (Rule rule : RULES) {
             Matcher m = rule.re().matcher(text);
             text = m.replaceAll(mr -> {

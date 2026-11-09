@@ -18,7 +18,7 @@ All data is synthetic.
 export LLM_API_KEY=...            # any OpenAI-compatible API; PowerShell: $env:LLM_API_KEY='...'
 # optional: LLM_BASE_URL (https, default https://api.deepseek.com), LLM_MODEL (default deepseek-chat)
 ./mvnw spring-boot:run            # Windows: .\mvnw.cmd ; needs JDK 21 (JAVA_HOME)
-./mvnw test                       # 28 tests, no API key needed
+./mvnw test                       # 38 tests, no API key needed
 ```
 
 ```bash
@@ -30,7 +30,7 @@ curl -X POST localhost:8080/api/kyc/verify -H 'Content-Type: application/json' -
 Document types: `kimlik`, `adres`, `banka`. Limits: 1-4 documents, 4000 characters each, 10 requests/minute per IP (in memory).
 
 ## Verified
-- `mvn test`: 28/28 (validators, masking, every decision rule with a fixed clock, extractor with a fake LLM including invented placeholders and injection).
+- `mvn test`: 38/38 (validators, masking, every decision rule with a fixed clock, extractor with a fake LLM including invented placeholders, injection, dates not in the document, request-size and rate-limit guards).
 - LLM eval through the real pipeline (`KycEvalTest`, runs when `LLM_API_KEY` is set, deepseek-chat, fixed clock 2026-11-04):
 
   | Set | Result |
@@ -47,7 +47,18 @@ Document types: `kimlik`, `adres`, `banka`. Limits: 1-4 documents, 4000 characte
 - The dev set found a real design bug (d-08): a number with a bad TCKN checksum was left unmasked, the model echoed it back,
   and `TCKN_INVALID` could never fire. Every 11-digit candidate is now masked and the engine checks the checksum.
 
+## Security review (2026-11-10) and what changed
+An independent read-only review found, among smaller items, two real problems that are now fixed:
+- **Rate limit bypass.** `CF-Connecting-IP` / `X-Forwarded-For` were trusted from any client, so a random header per request meant no limit and an unbounded table. Now the socket address is used unless `kyc.trust-forwarded-headers=true` (only behind your own proxy), the table is bounded, and bodies over 128 KB or without `Content-Length` are refused before parsing.
+- **Dates were not grounded.** The model could return a valid-looking birth or expiry date that is not in the document and get an APPROVE. Every returned date must now be one written in the text (`dd.MM.yyyy`, `yyyy-MM-dd`, `12 Mayıs 1990`), otherwise `DATE_NOT_IN_SOURCE_*` sends the case to review. The `<belge>` delimiter can no longer be closed from inside the document, `type` is restricted to `kimlik|adres|banka`, names need two whole words from the text, and a placeholder must match its field.
+- PII masking now folds full-width digits and non-breaking spaces and accepts dotted TCKN / IBAN and a space after `TR`.
+
+Re-run after these changes: unit tests only (38/38). The LLM eval sets were **not** re-run against the real model, so the 20/20 and 16/16 numbers below predate them.
+
 ## Known limits
+- No authentication on `/api/kyc/verify`: anyone who can reach the port can call it and spend your LLM budget. Put it behind your own auth and a spend cap before exposing it.
+- A decoy date next to the real one ("Geçerlilik: 01.01.2020 (uzatıldı: 01.01.2032)") is a date written in the document, so it passes the grounding check. Several candidates for one label should go to review; that is not implemented.
+- Masking is pattern-based: a TCKN written digit by digit with separators, or split across lines, still reaches the model.
 - Injection filter is a denylist; the decision engine is the real defence (the model cannot approve anything).
 - Names, addresses and birth dates are not masked: the model needs them to extract. Only identifiers are.
 - Dates must come back as `YYYY-MM-DD`; other formats are flagged as unreliable (manual review), not guessed.

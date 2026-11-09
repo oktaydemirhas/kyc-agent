@@ -34,6 +34,17 @@ class PiiTest {
     }
 
     @Test
+    void unicodeAndPunctuationVariantsAreMaskedToo() {
+        assertEquals(List.of("TCKN"), types("TC: 100.000.001.46"));
+        assertEquals(List.of("TCKN"), types("TC: 1000 0000 146"));
+        assertEquals(List.of("TCKN"), types("TC: 100 000 001 46"));      // non-breaking spaces
+        assertEquals(List.of("TCKN"), types("TC: １０００００００１４６")); // full-width digits
+        assertEquals(List.of("IBAN"), types("TR 33 0006 1005 1978 6457 8413 26"));
+        assertEquals(List.of("IBAN"), types("TR33.0006.1005.1978.6457.8413.26"));
+        assertFalse(Pii.mask("TC: 100 000 001 46").text().contains("146"));
+    }
+
+    @Test
     void leavesOrdinaryNumbersAloneButMasksEveryIdCandidate() {
         // Unlike a chat assistant, KYC masks 11-digit numbers even when the checksum fails; the engine rejects them later.
         assertEquals(List.of("TCKN"), types("12345678901"));

@@ -17,3 +17,5 @@
 ## Next
 - Persist decisions (see below); a larger, adversarial injection set (multi-turn, encoded, non-Turkish/English) before claiming more.
 - Persist decisions (Postgres) with masked evidence only; add a reviewer queue.
+
+- 2026-11-10 review: dates the model returned were never checked against the text, so a manipulated model could get an expired ID of a minor APPROVEd. Grounding has to cover every field, not only identifiers; every returned date must now appear in the document. Forwarding headers are client-controlled: never key a rate limiter on them by default.

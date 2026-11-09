@@ -27,7 +27,7 @@ public final class Checks {
     /** Turkish IBAN: TR + 24 digits, ISO 7064 mod-97 check. */
     public static boolean validIban(String raw) {
         if (raw == null) return false;
-        String s = raw.replaceAll("[\\s-]", "").toUpperCase(Locale.ROOT);
+        String s = raw.replaceAll("[\\s.-]", "").toUpperCase(Locale.ROOT);
         if (!s.matches("TR\\d{24}")) return false;
         String rearranged = s.substring(4) + s.substring(0, 4);
         StringBuilder digits = new StringBuilder();
